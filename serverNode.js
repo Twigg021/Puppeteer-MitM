@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const puppeteer = require('puppeteer');
+const { timeout } = require('puppeteer');
 console.log('Host: Checked libraries.');
 
 console.log('Host: Starting app...');
@@ -24,12 +25,13 @@ let browser;
     console.log('Host: Launched browser.')
 })();
 
-function client(ip, url, page, instance, res) {
+function client(ip, url, page, instance, res, pageReq) {
     this.ip = ip;
     this.url = url;
     this.page = page;
     this.instance = instance;
     this.res = res;
+    this.pageReq = pageReq;
 }
 
 const filePath = path.join(__dirname, 'index.html');
@@ -57,7 +59,7 @@ async function handleInitialConnect(entry, req, res) {
     });
     console.log(req.ip + ': Requested basic- ' + entry);
 
-    clients.push(new client(req.ip, entry, null, clientInstance, null))
+    clients.push(new client(req.ip, entry, null, clientInstance, null, 0))
 }
 
 app.post('/prox', async (req, res) => {
@@ -104,7 +106,31 @@ app.get('/strt/:entry', async (req, res) => {
 
     await page.waitForNetworkIdle();
 
-    res.write(`data: ${JSON.stringify({content: await client.page.content(), url: client.url})}\n\n`);
+    res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
+
+    page.on('request', async () => {
+            client.pageReq = 1;
+            await page.waitForNetworkIdle();
+            client.pageReq = 0;
+    })
+
+    page.on('load', async () => {
+        res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
+        try {
+            await page.waitForNetworkIdle()
+            res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
+        } catch(e) {}
+    })
+
+    page.on('domcontentloaded', async () => {
+        res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
+        try {
+            await page.waitForNetworkIdle()
+            res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
+        } catch(e) {}
+    })
+
+    page.on('')
 
     req.on('close', () => {
         clients = clients.filter(client => client.res != res);
@@ -121,22 +147,29 @@ app.post('/updt/:entry', async (req, res) => {
     const page = client.page
     const eventData = req.body;
     const { type, x, y, key, value, element } = eventData;
+    let tempVar = 0;
 
     try{
     switch (type) {
         case 'click':
-            await Promise.all([
-                page.waitForNavigation(),
-                page.click('xpath/' + element),
-            ]);
+            await page.click('xpath/' + element)
+                if(client.pageReq == 1) {
+                    tempVar = 1;
+                }
+            if(tempVar==0) return;
             await page.waitForNetworkIdle();
             client.res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
         break;
         case 'keydown':
             await page.keyboard.press(key);
-        break;
-        case 'input':
-            await page.type(value);
+            if(key=='Enter') {
+                if(client.pageReq == 1) {
+                    tempVar = 1;
+                }
+                if(tempVar==0) return;
+                await page.waitForNetworkIdle();
+                client.res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
+            }
         break;
         case 'mousemove':
             await page.mouse.move(x, y)

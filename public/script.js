@@ -95,6 +95,7 @@ function fullReplace(input, originalURL) {
 
   
   function sendEventToServer(event) {
+    console.log(event.target)
     const eventData = {
       type: event.type,
       x: event.clientX,

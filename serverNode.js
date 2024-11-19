@@ -20,7 +20,18 @@ let browser;
 
 (async () => {
     console.log('Host: Launching browser...');
-    browser = await puppeteer.launch({ headless: false });
+    browser = await puppeteer.launch({
+        headless: false,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage', 
+            '--disable-gpu',
+            '--disable-software-rasterizer', 
+            '--disable-features=WebGL',
+            '--use-gl=swiftshader' // Use SwiftShader for GPU rendering
+          ]
+    });
     active = true;
     console.log('Host: Launched browser.')
 })();
@@ -120,6 +131,12 @@ app.get('/strt/:entry', async (req, res) => {
             await page.waitForNetworkIdle()
             res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
         } catch(e) {}
+    })
+
+    page.on('response', async () => {
+        await page.waitForNetworkIdle()
+        res.write(`data: ${JSON.stringify({content: await page.content(), url: client.url})}\n\n`);
+
     })
 
     page.on('domcontentloaded', async () => {
